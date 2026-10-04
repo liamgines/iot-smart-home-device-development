@@ -3,6 +3,10 @@
     <img src="assets/iot-hero.drawio.svg">
 </div>
 
+<br>
+
+![Local Server-Client Run Demo](./assets/server-client-run.gif)
+
 <details>
     <summary>Table of Contents</summary>
     <ol>
