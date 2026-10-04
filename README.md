@@ -48,8 +48,6 @@ The system models a connected smart home environment where simulated IoT devices
 #### Database
 - [![Neon][Neon-icon]][Neon-url]
 
-    - ![Neon Database](./assets/neon-database.png)
-
 #### Data Generation & Simulation
 - [![Dataniz][Dataniz-icon]][Dataniz-url]
 
@@ -60,14 +58,23 @@ The system models a connected smart home environment where simulated IoT devices
 
 ## Documentation
 
-![IoT Smart Home Network Simulation Architecture](assets/iot-network-diagram.drawio.svg)
+<div style="display: flex; justify-content: center;">
+    <img src="./assets/iot-network-diagram.drawio.svg">
+</div>
 
 ## Data Generation
 
-![Dataniz Database](./assets/dataniz-database.png)
-
 - Telemetry data is generated using Dataniz virtual IoT devices configured to simulate a smart home environment.
+
+<div style="display: flex; justify-content: center;">
+    <img src="./assets/dataniz-database.png">
+</div>
+
 - The simulation consists of virtual smart appliances that continuously generate sensor measurements such as electricity consumption, water consumption, humidity, and temperature.
+
+<div style="display: flex; justify-content: center;">
+    <img src="./assets/dataniz-sensors.png">
+</div>
 
 ## Getting Started
 Follow the steps below to set up and run the IoT Smart Home Network Simulation.
@@ -95,62 +102,87 @@ Supported cloud database providers include:
 > The project was developed and tested using Neon PostgreSQL. Alternative providers such as the ones listed above may also work with minimal configuration changes.
 
 ### Installation
+1. Clone/download a copy of this repository.
+2. Open your terminal and navigate to the project folder.
+3. Create a virtual environment within the folder by typing in `python -m venv venv` and pressing enter.
 
-1. Clone the repository with:
-```bash
-git clone <repository-url>
-```
-and
-```bash
-cd <repository-name>
-```
+> [!NOTE]
+> Confirm that the `venv/` folder was created using `dir` for Windows users or `ls` for Linux/macOs users.
 
-2. Install project dependencies.
-```bash
-pip install -r requirements.txt
-```
+5. Activate the environment
+
+> [!NOTE]
+> Windows users run `venv\Scripts\Activate` while those on Linux/macOS should run `source venv/bin/activate`.
+
+6. Install the necessary packages into the environment  by running `pip install -r requirements.txt`.
 
 ### Database Setup
 1. Create a database using a provider such as Neon.
 2. Obtain the database connection string.
 3. Create a ```.env``` file in the same directory as `echo_server.py`:
 ```
-DATABASE_CONNECTION_STRING="your_connection_string_here"
+DATABASE_CONNECTION_STRING="<your_connection_string_here>"
+DATABASE_NAME="<your_database_name_here>"
 ```
 
 > [!IMPORTANT]
 > Store `DATABASE_CONNECTION_STRING` in a `.env` file rather than directly in `echo_server.py` to avoid exposing database credentials.
 
-4. Populate the database using [Dataniz](https://www.dataniz.com/).
+4. Create an account with [Dataniz](https://www.dataniz.com/) and follow the instructions to populate the online database.
 
-![Populated Neon Database](./assets/dataniz-sensors.png)
+> [!NOTE]
+> Make sure to configure your virtual devices to transmit telemetry data to the online database in order to allow the server to query and analyze live sensor measurements.
 
-- The virtual devices are configured to transmit telemetry data to the online database, allowing the server to query and analyze live sensor measurements.
+5. Configure the server's SQL query to retrieve telemetry records from the online database.
+ 
+```sql
+SELECT * FROM "<database_table>";
+```
+
+The server reads each sensor's timestamp from the JSON `PAYLOAD` field, so the table must include an `ID` column and payloads must include a `timestamp` value.
+
+<br>
+
+![Neon Database](./assets/neon-database.png)
 
 ### Run Server
+
+![CLI Server Output](./assets/server.png)
+
 Navigate to the project directory holding `echo_server.py`, then run the command:
 ```
-python echo_server.py <server-ip> <port>
+python echo_server.py <server_ip> <port>
 ```
+
+> [!NOTE]
+> You must run the server prior to running the client. Otherwise, the client wouldn't have a server to connect to!
 
 ### Run Client
-Run the command: 
-```
+
+![CLI Server Output](./assets/client.png)
+
+1. Run the command: 
+
+```bash
 python ./echo_client.py
 ```
-Enter the server IP address and port number when prompted.
 
-Available commands:
+2. Enter the server IP address and port number when prompted.
+
+3. Input the available commands:
 ```
 1 - Device Status
 2 - Sensor Summary
 3 - Network Information
 ```
 
+> [!NOTE]
+> This project evolved from an earlier client-server messaging application. Free-form messaging has since been discontinued and replaced with predefined analytical queries that retrieve and analyze IoT telemetry data from the server.
+
 ### Networking Considerations
 
 #### IP Address Selection
-- If the client and server are running on the same machine, use `127.0.0.1` or `localhost`.
+- If the client and server are running on the same machine, use `127.0.0.1`.
 - If connecting over a local network, use the server's private IP address (for example, `192.168.x.x`).
 - If connecting over the Internet, use the server's public IP address.
 
