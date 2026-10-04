@@ -1,6 +1,3 @@
-*.exe
-*.swp
-*.bat
 *.env
-
-*.o
+venv/
+.venv/
