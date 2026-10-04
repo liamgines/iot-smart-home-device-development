@@ -4,7 +4,6 @@ import sys
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone
-import pytz
 
 largest_known_id = 0
 selected_rows = []
@@ -47,27 +46,52 @@ def seconds_to_hours(seconds):
     hours = seconds * HOURS_PER_SECOND
     return hours
 
+def payload_timestamp(payload):
+    timestamp = payload.get("timestamp")
+    if timestamp is None:
+        return None
+
+    try:
+        timestamp = float(timestamp)
+    except (TypeError, ValueError):
+        parsed_timestamp = datetime.fromisoformat(str(timestamp))
+        if parsed_timestamp.tzinfo is None:
+            return parsed_timestamp.replace(tzinfo=timezone.utc)
+        return parsed_timestamp.astimezone(timezone.utc)
+
+    if timestamp > 100000000000:
+        timestamp /= 1000
+    return datetime.fromtimestamp(timestamp, timezone.utc)
+
+def find_measurement(payload, *key_fragments):
+    for key, value in payload.items():
+        normalized_key = key.casefold()
+        if all(fragment.casefold() in normalized_key for fragment in key_fragments):
+            return value
+    return None
+
 def get_client_requested_data(query_index):
     global largest_known_id
     global selected_rows
     # Fetches data from Neon database
-    cursor.execute(f'select PAYLOAD, TIME, ID from "Assignment #8 Destination Table_virtual" WHERE ID > {largest_known_id}')
-    selected_rows = selected_rows + cursor.fetchall()
+    cursor.execute(f'select PAYLOAD, ID from "{os.getenv("DATABASE_NAME")}" WHERE ID > %s', (largest_known_id,))
+    new_rows = cursor.fetchall()
+    selected_rows.extend((row[0], row[1]) for row in new_rows)
+    if new_rows:
+        largest_known_id = max(largest_known_id, *(row[1] for row in new_rows))
 
     if query_index == 0:
         moisture_measurements = []
+        current_time = datetime.now(timezone.utc)
 
         for row in selected_rows:
-            largest_known_id = max(largest_known_id, row[2]) 
-
             current_payload = row[0]
-            current_creation_time = row[1]
-            if current_payload["parent_asset_uid"] == FIRST_FRIDGE_ID:
-                time_diff = datetime.now(timezone.utc) - current_creation_time
-                # Skips; doesn't account for data not within the past 3 hours
-                if time_diff.seconds > SECONDS_PER_THREE_HOURS:
+            moisture_measurement = find_measurement(current_payload, "moisture")
+            current_creation_time = payload_timestamp(current_payload)
+            if moisture_measurement is not None and current_creation_time is not None:
+                time_diff = (current_time - current_creation_time).total_seconds()
+                if time_diff < 0 or time_diff > SECONDS_PER_THREE_HOURS:
                     continue
-                moisture_measurement = current_payload["Moisture Meter - Moisture Meter (Fridge)"]
                 moisture_measurement = float(moisture_measurement)
                 moisture_measurements.append(moisture_measurement)
 
@@ -82,11 +106,9 @@ def get_client_requested_data(query_index):
         water_consumption_measurements = []
 
         for row in selected_rows:
-            largest_known_id = max(largest_known_id, row[2]) 
-
             current_payload = row[0]
-            if current_payload["parent_asset_uid"] == DISHWASHER_ID:
-                water_consumption_measurement = current_payload["YF-S201 - Water Consumption Sensor (Dishwasher)"]
+            water_consumption_measurement = find_measurement(current_payload, "water", "consumption")
+            if water_consumption_measurement is not None:
                 water_consumption_measurement = float(water_consumption_measurement)
                 water_consumption_measurements.append(water_consumption_measurement)
 
@@ -98,61 +120,58 @@ def get_client_requested_data(query_index):
             client_requested_data = f"{device_name_lookup[DISHWASHER_ID]} did not produce any water consumption data yet"
 
     elif query_index == 2:
-        electricity_consumption_by_device_id = {FIRST_FRIDGE_ID : 0,
-                                                DISHWASHER_ID : 0,
-                                                SECOND_FRIDGE_ID : 0}
-        # https://stackoverflow.com/questions/56287435/convert-datetime-min-into-offset-aware-datetime
-        start_end_time_by_device_id = {FIRST_FRIDGE_ID : (datetime.now(timezone.utc),
-                                                          datetime.min.replace(tzinfo=pytz.UTC)),
-                                       DISHWASHER_ID : (datetime.now(timezone.utc),
-                                                        datetime.min.replace(tzinfo=pytz.UTC)),
-                                       SECOND_FRIDGE_ID : (datetime.now(timezone.utc),
-                                                           datetime.min.replace(tzinfo=pytz.UTC))}
+        electricity_consumption_by_device_id = {}
+        start_end_time_by_device_id = {}
+
         for row in selected_rows:
-            largest_known_id = max(largest_known_id, row[2]) 
-
             current_payload = row[0]
-            current_creation_time = row[1]
-            current_device_id = current_payload["parent_asset_uid"]
+            current_creation_time = payload_timestamp(current_payload)
+            if current_creation_time is None:
+                continue
 
-            if current_device_id == FIRST_FRIDGE_ID:
-                electricity_consumption_by_device_id[FIRST_FRIDGE_ID] += float(current_payload["ACS712 - ACS712 - Ammeter (Fridge)"])
-                start_end_time_by_device_id[FIRST_FRIDGE_ID] = (min(start_end_time_by_device_id[FIRST_FRIDGE_ID][0],
-                                                                    current_creation_time),
-                                                                max(start_end_time_by_device_id[FIRST_FRIDGE_ID][1],
-                                                                    current_creation_time))
+            current_device_id = current_payload.get("parent_asset_uid")
+            fridge_amps = find_measurement(current_payload, "acs712", "fridge")
+            dishwasher_amps = find_measurement(current_payload, "acs712", "dishwasher")
+            second_fridge_amps = find_measurement(current_payload, "sensor 1")
+            if fridge_amps is not None:
+                device_id, current_amps = FIRST_FRIDGE_ID, fridge_amps
+            elif dishwasher_amps is not None:
+                device_id, current_amps = DISHWASHER_ID, dishwasher_amps
+            elif second_fridge_amps is not None or current_device_id == SECOND_FRIDGE_ID:
+                if second_fridge_amps is None:
+                    continue
+                device_id, current_amps = SECOND_FRIDGE_ID, second_fridge_amps
+            else:
+                continue
 
-            elif current_device_id == DISHWASHER_ID:
-                electricity_consumption_by_device_id[DISHWASHER_ID] += float(current_payload["ACS712 - Ammeter (Dishwasher)"])
+            electricity_consumption_by_device_id[device_id] = (
+                electricity_consumption_by_device_id.get(device_id, 0) + float(current_amps)
+            )
+            start_time, end_time = start_end_time_by_device_id.get(
+                device_id, (current_creation_time, current_creation_time)
+            )
+            start_end_time_by_device_id[device_id] = (
+                min(start_time, current_creation_time),
+                max(end_time, current_creation_time),
+            )
 
-                start_end_time_by_device_id[DISHWASHER_ID] = (min(start_end_time_by_device_id[DISHWASHER_ID][0],
-                                                                  current_creation_time),
-                                                              max(start_end_time_by_device_id[DISHWASHER_ID][1],
-                                                                  current_creation_time))
+        for device_id, current_amps in electricity_consumption_by_device_id.items():
+            start_time, end_time = start_end_time_by_device_id[device_id]
+            run_time_seconds = (end_time - start_time).total_seconds()
+            electricity_consumption_by_device_id[device_id] = amps_to_kilowatt_hours(
+                current_amps, seconds_to_hours(run_time_seconds)
+            )
 
-            elif current_device_id == SECOND_FRIDGE_ID:
-                electricity_consumption_by_device_id[SECOND_FRIDGE_ID] += float(current_payload["sensor 1 27a451a2-eac4-471d-8cf7-de13d8900eaf"])
-                start_end_time_by_device_id[SECOND_FRIDGE_ID] = (min(start_end_time_by_device_id[SECOND_FRIDGE_ID][0],
-                                                                     current_creation_time),
-                                                                 max(start_end_time_by_device_id[SECOND_FRIDGE_ID][1],
-                                                                     current_creation_time))
-
-        for device_id in electricity_consumption_by_device_id:
-            current_device_run_time = start_end_time_by_device_id[device_id][1] - start_end_time_by_device_id[device_id][0]
-            electricity_consumption_by_device_id[device_id] = amps_to_kilowatt_hours(electricity_consumption_by_device_id[device_id],
-                                                                                     seconds_to_hours(current_device_run_time.seconds))
-
-        most_power_hungry_device_id = False
-        most_electricity_consumed = 0
-        for device_id in electricity_consumption_by_device_id:
-            current_electricity_consumed = electricity_consumption_by_device_id[device_id]
-            most_electricity_consumed = max(most_electricity_consumed, current_electricity_consumed)
-
-        client_requested_data = f""
-        for device_id in electricity_consumption_by_device_id:
-            current_electricity_consumed = electricity_consumption_by_device_id[device_id]
-            if current_electricity_consumed == most_electricity_consumed:
-                client_requested_data += f"{device_name_lookup[device_id]} consumed the most electricity among all devices at {most_electricity_consumed:.2f} kilowatt hours\n"
+        if not electricity_consumption_by_device_id:
+            client_requested_data = "No electricity data is available in the database"
+        else:
+            most_electricity_consumed = max(electricity_consumption_by_device_id.values())
+            client_requested_data = "".join(
+                f"{device_name_lookup[device_id]} consumed the most electricity among all devices at "
+                f"{consumption:.2f} kilowatt hours\n"
+                for device_id, consumption in electricity_consumption_by_device_id.items()
+                if consumption == most_electricity_consumed
+            )
 
     else:
         raise ValueError
@@ -191,7 +210,12 @@ while True:
 
     if message_from_client in VALID_QUERIES:
         query_index = VALID_QUERIES.index(message_from_client)
-        server_message = get_client_requested_data(query_index)
+        try:
+            server_message = get_client_requested_data(query_index)
+        except psycopg2.Error as error:
+            print(f"Database query failed: {error}")
+            DATABASE_CONNECTION_STRING.rollback()
+            server_message = "Database query failed; see the server log for details."
     else:
         # Modifies the client message received to be all uppercased
         server_message = message_from_client.upper()
