@@ -15,11 +15,19 @@ SECONDS_PER_THREE_HOURS = THREE_HOURS * MINUTES_PER_HOUR * SECONDS_PER_MINUTE
 
 VALID_QUERIES = ["What is the average moisture inside my kitchen fridge in the past three hours?",
                  "What is the average water consumption per cycle in my smart dishwasher?",
-                 "Which device consumed more electricity among my three IoT devices (two refrigerators and a dishwasher)?"]
+                 "Which device consumed more electricity among my three IoT devices?"]
 
 FIRST_FRIDGE_ID = "id4-6e4-ls8-f7q"
 DISHWASHER_ID = "7pz-ybr-8s0-6h3"
 SECOND_FRIDGE_ID = "27a451a2-eac4-471d-8cf7-de13d8900eaf"
+
+# ANSI color codes for terminal output
+BLUE = "\033[94m"
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+RESET = "\033[0m"
 
 device_name_lookup = { FIRST_FRIDGE_ID: "Kitchen Fridge",
                       DISHWASHER_ID: "Smart Dishwasher",
@@ -70,7 +78,7 @@ def find_measurement(payload, *key_fragments):
             return value
     return None
 
-def get_client_requested_data(query_index):
+def get_client_requested_data(query_index, cursor):
     global largest_known_id
     global selected_rows
     # Fetches data from Neon database
@@ -179,15 +187,17 @@ def get_client_requested_data(query_index):
     return client_requested_data
 
 def main():
+    print(f"\n{BLUE}* * * * * * * * IoT Smart Home Client * * * * * * * *{RESET}\n")
+    
     # Obtains access to connection string safely
     load_dotenv()
     DATABASE_CONNECTION_STRING = psycopg2.connect(os.getenv("DATABASE_CONNECTION_STRING"))
 
     # Tests connection to Neon
     if DATABASE_CONNECTION_STRING:
-        print("Connection with Neon successful!")
+        print(f"{GREEN}Connection with Neon successful!{RESET}")
     else:
-        print("Nothing happened...")
+        print(f"{RED}Nothing happened...{RESET}")
 
     cursor = DATABASE_CONNECTION_STRING.cursor()
 
@@ -201,40 +211,41 @@ def main():
     my_tcp_socket.listen(5)
     # Extracts info from the first client connection established
     client, client_address = my_tcp_socket.accept()
-    print("Connection established!")
+    print(f"{GREEN}Connection established!{RESET}")
 
     while True:
 
         # Recieves data (of max size of 1024 bytes) from client
         message_from_client = str((client.recv(1024)).decode())
-        print(f"Message from Client: {message_from_client}")
+
+        # Indicates Server-Client communication should cease
+        if message_from_client == "":
+            break
+        else:
+            print(f"{GREEN}Message from Client{RESET}: {message_from_client}")
 
         if message_from_client in VALID_QUERIES:
             query_index = VALID_QUERIES.index(message_from_client)
             try:
-                server_message = get_client_requested_data(query_index)
+                server_message = get_client_requested_data(query_index, cursor)
             except psycopg2.Error as error:
-                print(f"Database query failed: {error}")
+                print(f"{RED}Database query failed: {error}{RESET}")
                 DATABASE_CONNECTION_STRING.rollback()
                 server_message = "Database query failed; see the server log for details."
         else:
             # Modifies the client message received to be all uppercased
             server_message = message_from_client.upper()
 
-        # Indicates Server-Client communication should cease
-        if message_from_client == "":
-            break
-
         # Replies to client by sending it an uppercased version of client's sent message
         client.send(bytearray(str(server_message), encoding='utf-8'))
         
     # Closes connection with Client
     client.close()
-    print("Shutting down communications on server side...")
+    print(f"{RED}Shutting down communications on server side...{RESET}")
 
     # Closes connection with Neon database
     DATABASE_CONNECTION_STRING.close()
-    print("Shutting down connection with Neon...")
+    print(f"{RED}Shutting down connection with Neon...{RESET}")
 
 
 if __name__ == "__main__":

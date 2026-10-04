@@ -3,21 +3,33 @@ import ipaddress
 
 VALID_QUERIES = ["What is the average moisture inside my kitchen fridge in the past three hours?",
                  "What is the average water consumption per cycle in my smart dishwasher?",
-                 "Which device consumed more electricity among my three IoT devices (two refrigerators and a dishwasher)?"]
+                 "Which device consumed more electricity among my three IoT devices?"]
+
+# ANSI color codes for terminal output
+BLUE = "\033[94m"
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+RESET = "\033[0m"
 
 
 def output_query_options():
     for i in range(len(VALID_QUERIES)):
-        print(f"{i+1}. {VALID_QUERIES[i]}")
+        print(f"{i+1}. {YELLOW}{VALID_QUERIES[i]}{RESET}")
     print()
 
 def main():
+    print(f"\n{BLUE}* * * * * * * * IoT Smart Home Client * * * * * * * *{RESET}")
+
     # Loop to ensure that the user inputs a valid IP address for the Server
     while True:
         try:
-            server_ip_address = str(ipaddress.IPv4Address(input("\nInput the IP Address of the Server: ")))
+            server_ip_address = str(ipaddress.IPv4Address(
+                input(f"{CYAN}\nInput the IP Address of the Server: {RESET}"))
+                )
         except ipaddress.AddressValueError:
-            print("Invalid IP Address inputted.")
+            print(f"{RED}Invalid IP Address inputted.{RESET}")
             print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
             continue
         print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
@@ -27,7 +39,8 @@ def main():
     while True:
         try:
             # User inputs port number
-            server_port_num = int(input("Input the Port Number of the Server: "))
+            server_port_num = int(
+                input(f"{CYAN}\nInput the Port Number of the Server: {RESET}"))
             # Ensures that the port number inputted is not invalid
             if server_port_num not in range(1, 65536):
                 raise ValueError
@@ -37,11 +50,11 @@ def main():
             client.connect((server_ip_address, server_port_num))
         # Catches any errors associated with the port number
         except ValueError:
-            print("Invalid Port Number inputted. Should be between 1-65,535.")
+            print(f"{RED}Invalid Port Number inputted. Should be between 1-65,535.{RESET}")
             print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
             continue
         except Exception as e:
-            print("Unexpected Error:", e)
+            print(f"{RED}Unexpected Error: {e}{RESET}")
             print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
             continue
         print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
@@ -57,7 +70,7 @@ def main():
             query_index = int(message) - 1
             message = VALID_QUERIES[query_index]
         if message not in VALID_QUERIES and message != "":
-            print("\nSorry, this query cannot be processed. Please try one of the following:\n")
+            print(f"{RED}\nSorry, this query cannot be processed. Please try one of the following:{RESET}\n")
             continue
 
         print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
@@ -73,12 +86,12 @@ def main():
         server_response = client.recv(1024).decode()
 
         # Displays server replay
-        print('Client Received:', server_response)
+        print(f'{GREEN}Client Received: {RESET}{server_response}')
         print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
 
     # Closes connection with Server
     client.close()
-    print("Shutting down communications on client side...")
+    print(f"{RED}Shutting down communications on client side...{RESET}")
 
 
 if __name__ == "__main__":
