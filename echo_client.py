@@ -59,6 +59,8 @@ while True:
         print("\nSorry, this query cannot be processed. Please try one of the following:\n")
         continue
 
+    print("* * * * * * * * * * * * * * * * * * * * * * * * * *")
+
     # Sends message to Server over communication link
     client.send(bytearray(str(message), encoding="utf-8"))
 
